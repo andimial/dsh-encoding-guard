@@ -1,0 +1,29 @@
+{
+  "name": "@dsh-external/dsh-encoding-guard",
+  "version": "0.0.1",
+  "description": "文件编码守卫：read/write/edit 工具透明 UTF-8 no BOM 转码桥，轮次结束恢复原编码（utf8-bom/gb18030/utf16le/utf16be）",
+  "private": true,
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/types/index.d.ts",
+  "files": [
+    "lib"
+  ],
+  "license": "BSD-3-Clause",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-fs": ">=0.0.1-rc <2",
+    "@deepseek-ai/dsh-tools": ">=0.0.1-rc <2",
+    "cordis": ">=4.0.0-rc <5"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.6.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "bash scripts/build.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}
