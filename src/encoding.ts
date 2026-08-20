@@ -39,33 +39,89 @@ function isValidGb18030(bytes: Buffer): boolean {
 }
 
 /** 无 BOM UTF-16 启发式：长度为偶且零字节集中在高字节位置（LE 集中在奇数下标，BE 在偶数下标）。 */
-function detectBareUtf16(bytes: Buffer): DetectedEncoding | undefined {
-  if (bytes.length % 2 !== 0 || bytes.length < 4) return undefined
-  const pairs = bytes.length / 2
-  let zeroEven = 0
-  let zeroOdd = 0
-  for (let i = 0; i < bytes.length; i += 2) if (bytes[i] === 0) zeroEven++
-  for (let i = 1; i < bytes.length; i += 2) if (bytes[i] === 0) zeroOdd++
-  const rEven = zeroEven / pairs
-  const rOdd = zeroOdd / pairs
+function bareUtf16FromScan(scan: EncodingScan): DetectedEncoding | undefined {
+  if (scan.length % 2 !== 0 || scan.length < 4) return undefined
+  const pairs = scan.length / 2
+  const rEven = scan.zeroEven / pairs
+  const rOdd = scan.zeroOdd / pairs
   if (rOdd > 0.3 && rOdd - rEven > 0.2) return 'utf16le'
   if (rEven > 0.3 && rEven - rOdd > 0.2) return 'utf16be'
   return undefined
 }
 
-export function detectEncoding(bytes: Buffer): DetectedEncoding {
-  if (bytes.length === 0) return 'empty'
-  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return 'utf8-bom'
-  if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) return 'utf16le-bom'
-  if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) return 'utf16be-bom'
-  let hasNul = false
+/**
+ * 单一判定源：整缓冲扫描与流式扫描累积出同构的 EncodingScan，
+ * 检测决策只在 decideFromScan 一处，保证两条路径行为一致。
+ */
+export interface EncodingScan {
+  /** 总字节数。 */
+  length: number
+  /** 头部至多 4 字节（BOM 判定）。 */
+  head: Uint8Array
+  /** 偶数下标的 NUL 计数。 */
+  zeroEven: number
+  /** 奇数下标的 NUL 计数。 */
+  zeroOdd: number
+  /** 全体字节通过严格 UTF-8 验证。 */
+  utf8Valid: boolean
+  /** 全体字节 GB18030 解码无 U+FFFD。 */
+  gb18030Valid: boolean
+}
+
+/** 对整块缓冲做一次性扫描。 */
+export function scanBuffer(bytes: Buffer): EncodingScan {
+  let zeroEven = 0
+  let zeroOdd = 0
   for (let i = 0; i < bytes.length; i++) {
-    if (bytes[i] === 0) { hasNul = true; break }
+    if (bytes[i] === 0) {
+      if (i % 2 === 0) zeroEven++
+      else zeroOdd++
+    }
   }
-  if (hasNul) return detectBareUtf16(bytes) ?? 'binary'
-  if (isValidUtf8(bytes)) return 'utf8'
-  if (isValidGb18030(bytes)) return 'gb18030'
+  return {
+    length: bytes.length,
+    head: bytes.subarray(0, 4),
+    zeroEven,
+    zeroOdd,
+    utf8Valid: isValidUtf8(bytes),
+    gb18030Valid: isValidGb18030(bytes),
+  }
+}
+
+/** 由扫描结果判定编码（BOM → NUL/UTF-16 启发式 → 严格 UTF-8 → GB18030 → binary）。 */
+export function decideFromScan(scan: EncodingScan): DetectedEncoding {
+  if (scan.length === 0) return 'empty'
+  if (scan.length >= 3 && scan.head[0] === 0xEF && scan.head[1] === 0xBB && scan.head[2] === 0xBF) return 'utf8-bom'
+  if (scan.length >= 2 && scan.head[0] === 0xFF && scan.head[1] === 0xFE) return 'utf16le-bom'
+  if (scan.length >= 2 && scan.head[0] === 0xFE && scan.head[1] === 0xFF) return 'utf16be-bom'
+  if (scan.zeroEven + scan.zeroOdd > 0) return bareUtf16FromScan(scan) ?? 'binary'
+  if (scan.utf8Valid) return 'utf8'
+  if (scan.gb18030Valid) return 'gb18030'
   return 'binary'
+}
+
+export function detectEncoding(bytes: Buffer): DetectedEncoding {
+  return decideFromScan(scanBuffer(bytes))
+}
+
+/** 带形态编码的 BOM 字节长度（无 BOM 形态为 0）。 */
+export function bomLength(enc: DetectedEncoding): number {
+  switch (enc) {
+    case 'utf8-bom': return UTF8_BOM.length
+    case 'utf16le-bom': return UTF16LE_BOM.length
+    case 'utf16be-bom': return UTF16BE_BOM.length
+    default: return 0
+  }
+}
+
+/** 解码用的基础编码名（剥离 -bom 形态）。 */
+export function baseEncoding(enc: DetectedEncoding): 'utf8' | 'utf16le' | 'utf16be' | 'gb18030' {
+  switch (enc) {
+    case 'utf8-bom': return 'utf8'
+    case 'utf16le-bom': return 'utf16le'
+    case 'utf16be-bom': return 'utf16be'
+    default: return enc as 'utf8' | 'utf16le' | 'utf16be' | 'gb18030'
+  }
 }
 
 /** 按检测结果解码为字符串（BOM 剥离；字符序列保持不变）。 */

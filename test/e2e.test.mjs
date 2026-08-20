@@ -1,4 +1,4 @@
-// 端到端模拟测试：真实文件 + 模拟 tools/execute wrapper 生命周期
+// 端到端模拟测试：真实文件 + 真实 bridge（lib/bridge.js）+ 真实账本
 // node test/e2e.test.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -7,37 +7,21 @@ import os from 'node:os'
 import path from 'node:path'
 import iconv from 'iconv-lite'
 import { detectEncoding, decodeToText, encodeFromText } from '../lib/encoding.js'
+import { ensureUtf8OnDisk, restoreAll } from '../lib/bridge.js'
+import { EncodingLedger } from '../lib/ledger.js'
 
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'eb-test-'))
 const fileOf = (name) => path.join(tmp, name)
 
-// 复刻插件内的账本/恢复逻辑（与 src/index.ts 同构，验证流程编排正确）
+// 真实磁盘桥 + 真实账本（与 src/index.ts 挂点使用的同一段代码）
 async function makeHarness() {
-  const entries = new Map()
-  async function ensureUtf8(absPath) {
-    const key = absPath.toLowerCase()
-    if (entries.has(key)) return 'already'
-    let bytes
-    try { bytes = await fsp.readFile(absPath) } catch { return 'skipped' }
-    const enc = detectEncoding(bytes)
-    if (enc === 'utf8' || enc === 'empty' || enc === 'binary') return 'skipped'
-    const text = decodeToText(bytes, enc)
-    await fsp.writeFile(absPath, Buffer.from(text, 'utf8'))
-    entries.set(key, { path: absPath, encoding: enc })
-    return 'converted'
+  const ledger = new EncodingLedger()
+  return {
+    ledger,
+    entries: { get size() { return ledger.size } },
+    ensureUtf8: (absPath) => ensureUtf8OnDisk(absPath, ledger, 'test-session'),
+    restoreAll: () => restoreAll(ledger),
   }
-  async function restoreAll() {
-    for (const [key, entry] of [...entries]) {
-      let bytes
-      try { bytes = await fsp.readFile(entry.path) } catch { entries.delete(key); continue }
-      const cur = detectEncoding(bytes)
-      if (cur !== 'utf8' && cur !== 'utf8-bom') { entries.delete(key); continue }
-      const text = decodeToText(bytes, cur)
-      await fsp.writeFile(entry.path, encodeFromText(text, entry.encoding))
-      entries.delete(key)
-    }
-  }
-  return { entries, ensureUtf8, restoreAll }
 }
 
 test('e2e: GBK 文件 → read 前转换 → 编辑 → 轮次结束恢复原编码', async () => {

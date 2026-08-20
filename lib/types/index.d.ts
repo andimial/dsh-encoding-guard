@@ -6,8 +6,13 @@
  *     先原地把字符内容转码为 UTF-8 no BOM（字符序列与行尾不变），官方 read 因此总能读到文本；
  *  2. 编写前：同样先转 UTF-8 no BOM，官方 write/edit 正常工作；
  *     write 新建文件落地为 UTF-8 no BOM 且行尾 LF；
- *  3. 轮次结束（agent/turn-stopping）：把本轮会话账本中的文件恢复为原编码；
+ *  3. 轮次结束（agent/turn-stopping）：把账本中的文件恢复为原编码；
  *     会话结束（session/disposed）与插件卸载兜底检查，未恢复的一律恢复。
+ *
+ * 磁盘桥逻辑（检测/转换/账本恢复）在 src/bridge.ts（无 cordis 依赖，可独立测试）；
+ * 本文件只做挂点接线与模型面工具。绕过补位工具族（ADR 0001/0003）：
+ *  - eb_peek / eb_grep：内存解码只读路径（零磁盘副作用）；
+ *  - eb_convert：显式转换（默认进账本轮末恢复；persist:true 持久转换）。
  *
  * 设计要点：
  *  - 转换会改变文件字节 → FsVersion（size/mtimeNs/ctimeNs）随之变化。会话期间文件
