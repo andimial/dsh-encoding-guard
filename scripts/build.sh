@@ -4,7 +4,8 @@
 # DSH_CHECKOUT 探测优先级:
 #   1. 环境变量 DSH_CHECKOUT
 #   2. 源码 checkout: $HOME/dsh-harness / $HOME/dsh / $HOME/.dsh/dsh-harness（含 packages/）
-#   3. npm 全局安装的 dsh（node_modules/@deepseek-ai/dsh，嵌套 node_modules 里有全部 peer）
+#   3. npm root -g 动态探测（覆盖任意自定义 prefix，如 E:\npm）
+#   4. 常见 npm 全局前缀硬编码回退（npm 不在 PATH 时可用）
 # tsc 优先用 checkout 的，回退插件本地 node_modules/.bin/tsc（npm install 装好）。
 set -euo pipefail
 
@@ -20,7 +21,13 @@ dsh_root() {
   for candidate in "$HOME/dsh-harness" "$HOME/dsh" "$HOME/.dsh/dsh-harness"; do
     if [ -d "$candidate/packages" ]; then echo "$candidate"; return; fi
   done
-  # npm 安装：从本插件目录向上找不到，直接探测常见 npm 全局前缀
+  # npm 安装：动态探测 npm 全局根（覆盖任意自定义 prefix，如 E:\npm）
+  local npm_g
+  npm_g="$(npm root -g 2>/dev/null | tr '\\' '/' || true)"
+  if [ -n "$npm_g" ] && [ -d "$npm_g/@deepseek-ai/dsh/node_modules/@deepseek-ai/cordis" ]; then
+    echo "$npm_g/@deepseek-ai/dsh"; return
+  fi
+  # 回退：常见 npm 全局前缀硬编码（npm 不在 PATH 时仍可探测）
   for candidate in "$HOME/AppData/Roaming/npm/node_modules/@deepseek-ai/dsh" \
                    "/usr/local/lib/node_modules/@deepseek-ai/dsh" \
                    "/usr/lib/node_modules/@deepseek-ai/dsh"; do
