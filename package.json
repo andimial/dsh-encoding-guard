@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-external/dsh-encoding-guard",
+  "name": "dsh-encoding-guard",
   "version": "0.0.1",
   "description": "文件编码守卫：read/write/edit 工具透明 UTF-8 no BOM 转码桥，轮次结束恢复原编码（utf8-bom/gb18030/utf16le/utf16be）",
   "private": true,
@@ -7,8 +7,15 @@
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
   "files": [
-    "lib"
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
   ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
   "license": "BSD-3-Clause",
   "peerDependencies": {
     "@deepseek-ai/dsh-fs": ">=0.0.1-rc <2",

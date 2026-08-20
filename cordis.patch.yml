@@ -1,0 +1,8 @@
+# The dsh-encoding-guard bundle patch: a transparent encoding bridge for the
+# built-in read/write/edit tools. Non-UTF-8-no-BOM text files (utf8-bom /
+# gb18030 incl. GBK / utf16le / utf16be) are transcoded in place before the
+# official tool runs, and restored to their original encoding at turn end.
+
+- insert:
+    - id: encoding-guard
+      name: 'dsh-encoding-guard'

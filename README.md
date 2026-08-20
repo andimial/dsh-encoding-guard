@@ -1,4 +1,4 @@
-# @dsh-external/dsh-encoding-guard
+# dsh-encoding-guard
 
 文件编码守卫——DSH 内置 `read` / `write` / `edit` 工具的透明 UTF-8 no BOM 转码桥。
 
@@ -37,20 +37,21 @@
 - **多会话同文件**：账本按首个转换的会话归属；轮次结束恢复后另一会话再次触达会重新转换并自愈。
 - **宿主强杀**：dispose 兜底是尽力而为；异常退出后文件可能停留在 UTF-8 no BOM，用 `eb_restore` 或手动转回。
 
-## 构建与注入
+## 构建与安装
 
 ```bash
-npm install                 # 安装 iconv-lite / typescript 工具链
-npm run build               # bash scripts/build.sh（或按其逻辑手动 junction + tsc）
+npm install                 # 安装 typescript / @types/node / iconv-lite
+npm run build               # bash scripts/build.sh；Windows 无 bash 时按其逻辑手动 junction + tsc
 # DSH_CHECKOUT 可指向源码 checkout 或 npm 安装的 @deepseek-ai/dsh
+dsh plugin --profile web add F:/dsh-encoding-guard   # 本地目录安装（pnpm 解析为 link:，改代码即时生效）
+dsh --profile web --dump-config                       # 验证：组合树出现 id: encoding-guard 行
 ```
 
-DSH 内（dsh-super-injector）：
-
-```
-dev_build_plugin {"dir": "D:/dsh-plugins/dsh-encoding-guard"}
-dev_inject_plugin {"dir": "D:/dsh-plugins/dsh-encoding-guard"}
-```
+原理：`package.json` 声明 `"dsh": {"bundle": {"patch": "./cordis.patch.yml"}}`，`cordis.patch.yml` 以
+`insert` 把插件挂进组合树；`dsh plugin add` 安装后自动把包名追加进 `dsh.profile.bundles`。
+裸包名从 profile 目录解析（pnpm hoisted 的 `iconv-lite` + `~/.dsh/profiles/node_modules` 兜底的
+`@deepseek-ai/dsh-tools`）。重新打包分发时 `files` 白名单必须包含 `cordis.patch.yml`，否则
+bundle 层加载会因缺失 patch 文件而 fail loud。安装后需重启对应 profile 才生效。
 
 ## 测试
 

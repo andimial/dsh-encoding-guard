@@ -1,5 +1,5 @@
 /**
- * @dsh-external/dsh-encoding-guard — 文件编码守卫。
+ * dsh-encoding-guard — 文件编码守卫。
  *
  * 对内置 read/write/edit 工具做透明编码桥接：
  *  1. 读取前：磁盘文件非 UTF-8 no BOM（utf8-bom / gb18030 / utf16le / utf16be）时，
@@ -26,7 +26,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { detectEncoding, decodeToText, encodeFromText } from './encoding.js'
 import { EncodingLedger, type LedgerEntry } from './ledger.js'
 
-export const name = '@dsh-external/dsh-encoding-guard'
+export const name = 'dsh-encoding-guard'
 export const inject = ['fs', 'tools']
 
 /** 拦截的目标工具（dsh-tool-fs 的模型面工具名）。 */
@@ -245,7 +245,7 @@ export function apply(ctx: Context): void {
         })
         .join('\n')
     },
-  })), '@dsh-external/dsh-encoding-guard: eb_status')
+  })), 'dsh-encoding-guard: eb_status')
 
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'eb_restore',
@@ -270,5 +270,5 @@ export function apply(ctx: Context): void {
       const report = await restoreAll()
       return report.length > 0 ? report.join('\n') : '账本为空：没有待恢复的文件。'
     },
-  })), '@dsh-external/dsh-encoding-guard: eb_restore')
+  })), 'dsh-encoding-guard: eb_restore')
 }
