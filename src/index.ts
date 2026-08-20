@@ -53,10 +53,20 @@ export function apply(ctx: Context): void {
     try { ctx.logger[level](`[encoding-guard] ${message}`) } catch { /* logger 不可用也静默 */ }
   }
 
+  /** 从工具执行上下文取会话 cwd（exec→session 消息链的唯一出口）。 */
+  function sessionCwdOf(exec: unknown): string | undefined {
+    return (exec as { agent?: { session?: { header?: { cwd?: string } } } } | undefined)?.agent?.session?.header?.cwd
+  }
+
+  /** 从工具执行上下文取会话 id（缺省 unknown）。 */
+  function sessionIdOf(exec: unknown): string {
+    return (exec as { agent?: { session?: { id?: string } } } | undefined)?.agent?.session?.id ?? 'unknown'
+  }
+
   /** 解析工具参数里的 file_path 为绝对路径（复用 ctx.fs 的会话 cwd 语义）。 */
   async function resolveToolPath(filePath: string, exec: unknown): Promise<string | undefined> {
-    const e = exec as { agent?: { session?: { header?: { cwd?: string } } }, signal?: AbortSignal }
-    const cwd = e.agent?.session?.header?.cwd
+    const e = exec as { signal?: AbortSignal }
+    const cwd = sessionCwdOf(exec)
     try {
       const target = await ctx.fs.resolve(filePath, { cwd, signal: e.signal })
       return ctx.fs.processPath(target)
@@ -83,7 +93,7 @@ export function apply(ctx: Context): void {
     if (!absPath) return next()
     if (BINARY_EXTENSIONS.has(path.extname(absPath).toLowerCase())) return next()
     const key = absPath.toLowerCase()
-    const sessionId: string = exec.agent?.session?.id ?? 'unknown'
+    const sessionId = sessionIdOf(exec)
 
     if (exec.name === 'read') {
       await guardConvert(absPath, key, sessionId, exec.signal)
@@ -118,7 +128,7 @@ export function apply(ctx: Context): void {
   ctx.systemPrompt.section({
     name: 'encoding-guard:grep-hint',
     order: 105,
-    text: 'grep 由 ripgrep 直读磁盘字节：非 ASCII 模式（如中文关键词）对 GBK/GB18030/UTF-16 等旧编码文件可能漏配。ASCII 模式不受影响。需要跨编码中文检索时改用 eb_grep，或用 read 触达后自愈。',
+    text: 'grep 由 ripgrep 直读磁盘字节：非 ASCII 模式（如中文关键词）对 GBK/GB18030/UTF-16 等旧编码文件会漏配；ASCII 模式对 GBK/GB18030 文件仍可命中，但 UTF-16 文件任何模式都会漏配（NUL 字节交错）。需要跨编码中文检索时改用 eb_grep，或用 read 触达后自愈。',
   })
   ctx.systemPrompt.section({
     name: 'encoding-guard:shell-hint',
@@ -242,8 +252,7 @@ export function apply(ctx: Context): void {
     },
     async execute(args: { pattern: string, path?: string, include?: string }, exec: unknown) {
       try {
-        const e = exec as { agent?: { session?: { header?: { cwd?: string } } } }
-        const target = args.path ?? e.agent?.session?.header?.cwd
+        const target = args.path ?? sessionCwdOf(exec)
         if (!target) return 'ERROR: 缺少 path 且无法确定会话工作区'
         const absPath = await resolveToolPath(target, exec)
         if (!absPath) return `ERROR: 无法解析路径 ${target}`
@@ -271,8 +280,7 @@ export function apply(ctx: Context): void {
       try {
         const absPath = await resolveToolPath(args.file_path, exec)
         if (!absPath) return `ERROR: 无法解析路径 ${args.file_path}`
-        const e = exec as { agent?: { session?: { id?: string } } }
-        const sessionId = e.agent?.session?.id ?? 'unknown'
+        const sessionId = sessionIdOf(exec)
         const outcome = await ledger.withLock(absPath.toLowerCase(), () =>
           convertFile(absPath, args.persist === true, ledger, sessionId))
         switch (outcome.kind) {

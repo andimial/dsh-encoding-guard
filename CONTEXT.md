@@ -15,7 +15,7 @@ _Avoid_: 漏网、未覆盖（未定义判据的泛称）
 _Avoid_: 把这类通道列入"绕过清单"
 
 **实用一致（Practical consistency）**:
-本项目承诺的保证级别：read/write/edit 完全正确；其余模型可见通道保证 ASCII 模式可命中、有使用指导、经 read 触达即可自愈；不承诺进程外通道（shell 等）透明。
+本项目承诺的保证级别：read/write/edit 完全正确；其余模型可见通道保证 ASCII 模式对 GBK 系文件可命中（UTF-16 文件 grep 任何模式均漏配，由 eb_grep 与 read 自愈补位）、有使用指导、经 read 触达即可自愈；不承诺进程外通道（shell 等）透明。
 _Avoid_: 强一致（本项目明确不追求"所有通道字节级一致"）
 
 ### 桥接机制

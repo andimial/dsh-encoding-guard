@@ -23,6 +23,14 @@ const UTF8_BOM = Buffer.from([0xEF, 0xBB, 0xBF])
 const UTF16LE_BOM = Buffer.from([0xFF, 0xFE])
 const UTF16BE_BOM = Buffer.from([0xFE, 0xFF])
 
+/** 各基础编码的 BOM 字节（gb18030 无 BOM 形态）。注入目标 BOM 的唯一字节源（bridge.InjectPrefix 共用）。 */
+export const BOM_BYTES: Record<'utf8' | 'utf16le' | 'utf16be' | 'gb18030', Buffer | null> = {
+  utf8: UTF8_BOM,
+  utf16le: UTF16LE_BOM,
+  utf16be: UTF16BE_BOM,
+  gb18030: null,
+}
+
 function isValidUtf8(bytes: Buffer): boolean {
   try {
     new TextDecoder('utf-8', { fatal: true }).decode(bytes)
@@ -147,11 +155,12 @@ export function decodeToText(bytes: Buffer, enc: DetectedEncoding): string {
 export function encodeFromText(text: string, enc: DetectedEncoding): Buffer {
   switch (enc) {
     case 'utf8-bom':
-      return Buffer.concat([UTF8_BOM, Buffer.from(text, 'utf8')])
     case 'utf16le-bom':
-      return Buffer.concat([UTF16LE_BOM, iconv.encode(text, 'utf16le')])
-    case 'utf16be-bom':
-      return Buffer.concat([UTF16BE_BOM, iconv.encode(text, 'utf16be')])
+    case 'utf16be-bom': {
+      const base = baseEncoding(enc)
+      const body = base === 'utf8' ? Buffer.from(text, 'utf8') : iconv.encode(text, base)
+      return Buffer.concat([BOM_BYTES[base]!, body])
+    }
     case 'utf16le':
     case 'utf16be':
     case 'gb18030':

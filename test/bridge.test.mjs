@@ -10,6 +10,7 @@ import { detectEncoding } from '../lib/encoding.js'
 import {
   detectEncodingFile,
   recodeFile,
+  overwriteInPlace,
   ensureUtf8OnDisk,
   restoreAll,
   peekFile,
@@ -109,6 +110,39 @@ test('recodeFile：未知目标编码抛错，原文件字节不动、无残留'
   assert.deepEqual(leftovers, [])
 })
 
+// ── Slice B2：overwriteInPlace（rename 失败回退路径的原子语义） ────────────────
+test('overwriteInPlace：成功用临时内容覆盖原文件', async () => {
+  const file = fileOf('fb-ok.txt')
+  const temp = `${file}.ebtmp`
+  await fsp.writeFile(file, Buffer.from('旧内容\n', 'utf8'))
+  await fsp.writeFile(temp, Buffer.from('新内容\n', 'utf8'))
+  await overwriteInPlace(temp, file)
+  assert.equal((await fsp.readFile(file)).toString('utf8'), '新内容\n')
+  await fsp.rm(temp, { force: true })
+})
+
+test('overwriteInPlace：目标不可写 → 抛错且原文件字节不动（不落半截）', async () => {
+  const file = fileOf('fb-readonly.txt')
+  const temp = `${file}.ebtmp`
+  await fsp.writeFile(file, Buffer.from('原始字节\n', 'utf8'))
+  await fsp.writeFile(temp, Buffer.from('替换字节\n', 'utf8'))
+  await fsp.chmod(file, 0o444) // Windows：只读属性 → 打开写句柄在截断前即失败
+  try {
+    await assert.rejects(() => overwriteInPlace(temp, file))
+    assert.equal((await fsp.readFile(file)).toString('utf8'), '原始字节\n')
+  } finally {
+    await fsp.chmod(file, 0o666)
+    await fsp.rm(temp, { force: true })
+  }
+})
+
+test('overwriteInPlace：临时文件缺失 → 抛错且原文件不动', async () => {
+  const file = fileOf('fb-notemp.txt')
+  await fsp.writeFile(file, Buffer.from('原内容\n', 'utf8'))
+  await assert.rejects(() => overwriteInPlace(`${file}.missing.ebtmp`, file))
+  assert.equal((await fsp.readFile(file)).toString('utf8'), '原内容\n')
+})
+
 // ── Slice C：磁盘桥 ensureUtf8OnDisk / restoreAll（真实账本） ─────────────────
 test('磁盘桥：GBK 小文件 → converted 进账本 → restoreAll 恢复且账本清空', async () => {
   const file = fileOf('bridge-small.txt')
@@ -195,6 +229,24 @@ test('磁盘桥：文件被删除后恢复视为 gone', async () => {
   assert.equal(ledger.size, 0)
 })
 
+test('磁盘桥：条目路径 stat 后不可读（指向目录）→ gone，不中断整批恢复', async () => {
+  // 竞态回归：stat 与 readFile 之间文件被删/变不可读时，恢复不得抛错中断批次、账本不得残留
+  const dir = path.join(tmp, 'restore-race-dir')
+  await fsp.mkdir(dir, { recursive: true })
+  const other = fileOf('restore-race-other.txt')
+  const otherOriginal = iconv.encode('批次里另一个可恢复文件\r\n', 'gb18030')
+  await fsp.writeFile(other, otherOriginal)
+  const ledger = new EncodingLedger()
+  ledger.record(dir.toLowerCase(), { path: dir, encoding: 'gb18030', sessionId: 's1', touchedAt: Date.now() })
+  await ensureUtf8OnDisk(other, ledger, 's1')
+  const report = await restoreAll(ledger)
+  assert.ok(report.some((r) => r.includes('gone')), `目录条目应判 gone：${JSON.stringify(report)}`)
+  assert.ok(report.some((r) => r.includes('restored')), `可恢复文件应正常恢复：${JSON.stringify(report)}`)
+  assert.equal(ledger.size, 0)
+  assert.equal(await detectEncodingFile(other), 'gb18030')
+  assert.ok(Buffer.compare(await fsp.readFile(other), otherOriginal) === 0)
+})
+
 // ── Slice D：peekFile 内存解码（零磁盘副作用） ───────────────────────────────
 test('peekFile：GBK 文件读出正确中文，磁盘字节与 mtime 不变', async () => {
   const file = fileOf('peek-gbk.txt')
@@ -256,6 +308,13 @@ test('grepFiles：单文件 target 直接检索', async () => {
   assert.equal(matches[0].path, file)
 })
 
+test('grepFiles：单文件 target 为二进制扩展名 → 跳过（与目录遍历一致）', async () => {
+  const file = fileOf('grep-binary-name.png')
+  await fsp.writeFile(file, iconv.encode('中文关键词 inside misnamed png\r\n', 'gb18030'))
+  const matches = await grepFiles({ pattern: '中文关键词', target: file })
+  assert.deepEqual(matches, [])
+})
+
 // ── Slice F：convertFile persist 语义 ────────────────────────────────────────
 test('convertFile：默认进账本，restoreAll 后回原编码', async () => {
   const file = fileOf('convert-ledger.txt')
@@ -311,17 +370,28 @@ test('convertFile：账本内文件 persist=true → ledger-cleared，轮末不�
   assert.equal(await detectEncodingFile(file), 'utf8')
 })
 
-test('convertFile：不存在的文件 → error；超过上限 → error', async () => {
+test('convertFile：不存在的文件 → error', async () => {
   const ledger = new EncodingLedger()
   const r = await convertFile(path.join(tmp, 'nope.txt'), false, ledger, 's1')
   assert.equal(r.kind, 'error')
-  const big = fileOf('convert-big.txt')
-  const line = iconv.encode('超限 over\r\n', 'gb18030')
+})
+
+test('convertFile：>50MiB 放开闸门（ADR 0001：自动桥豁免由 eb_convert 流式补位）', async () => {
+  const file = fileOf('convert-huge.txt')
+  const line = iconv.encode('超大文件显式转换 over limit convert\r\n', 'gb18030')
   const repeat = Math.ceil((MAX_SCAN_BYTES + 1024 * 1024) / line.length)
-  await fsp.writeFile(big, Buffer.concat(Array(repeat).fill(line)))
-  const r2 = await convertFile(big, false, ledger, 's1')
-  assert.equal(r2.kind, 'error')
-  await fsp.rm(big)
+  const original = Buffer.concat(Array(repeat).fill(line))
+  await fsp.writeFile(file, original)
+  assert.ok((await fsp.stat(file)).size > MAX_SCAN_BYTES)
+  const ledger = new EncodingLedger()
+  const r = await convertFile(file, false, ledger, 's1')
+  assert.equal(r.kind, 'converted')
+  assert.equal(r.encoding, 'gb18030')
+  assert.equal(await detectEncodingFile(file), 'utf8')
+  const report = await restoreAll(ledger)
+  assert.ok(report[0].includes('restored'))
+  assert.ok(Buffer.compare(await fsp.readFile(file), original) === 0, '轮末恢复字节级还原')
+  await fsp.rm(file)
 })
 
 test('cleanup', async () => { await fsp.rm(tmp, { recursive: true, force: true }) })

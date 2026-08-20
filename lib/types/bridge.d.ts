@@ -2,17 +2,25 @@ import { type DetectedEncoding, type EncodingScan } from './encoding.js';
 import { EncodingLedger, type LedgerEntry } from './ledger.js';
 /** 整缓冲路径上限：≤ 此值沿用旧行为（一次性读入、内存判定与转换）。 */
 export declare const IN_MEMORY_LIMIT: number;
-/** 自动桥硬上限：超过此值不做检测转换（防误伤大文件）。 */
+/** 自动桥硬上限：超过此值自动桥不做检测转换（防误伤大文件）；eb_convert 显式补位，无上限。 */
 export declare const MAX_SCAN_BYTES: number;
 /** 流式扫描文件。读取失败时 reject（调用方决定放行或报错）。 */
 export declare function scanFile(absPath: string): Promise<EncodingScan>;
 /** 流式检测文件编码；不存在/不可读返回 undefined（交由官方工具给出规范错误）。 */
 export declare function detectEncodingFile(absPath: string): Promise<DetectedEncoding | undefined>;
 /**
+ * rename 失败后的回退覆盖：读临时内容 → 备份原字节 → 原地覆盖。
+ * - 临时文件读不了：原文件未动，直接抛（外层清理临时文件）；
+ * - 覆盖失败（如 ENOSPC 截断）：回写备份，尽力保住「原字节不动」，再抛原错误
+ *   （备份回写也失败时保留原错误，不掩盖）；回退路径罕见，大文件时短暂双份内存可接受。
+ * 临时文件清理由调用方负责。
+ */
+export declare function overwriteInPlace(tempPath: string, absPath: string): Promise<void>;
+/**
  * 把文件从 from 编码流式转码为 to 编码（原地替换）。
  * - BOM 形态按源剥离 / 按目标补回；字符序列（含行尾）保持不变；
  * - 写入同目录临时文件 `.ebtmp` 后 rename 原子替换；rename 失败（Windows 外部占用等）
- *   回退为读临时文件内容原地覆盖，保证语义达成；
+ *   回退 overwriteInPlace 原地覆盖（覆盖前备份，写失败回写），保证语义达成；
  * - 任何失败：删除临时文件、原文件字节不动。
  */
 export declare function recodeFile(absPath: string, from: DetectedEncoding, to: DetectedEncoding): Promise<void>;
@@ -65,7 +73,7 @@ export declare function grepFiles(opts: GrepOptions): Promise<GrepMatch[]>;
 export type ConvertOutcome = {
     kind: 'converted';
     persist: boolean;
-    encoding: string;
+    encoding: DetectedEncoding;
 } | {
     kind: 'already-utf8';
 } | {

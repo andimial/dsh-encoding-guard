@@ -1,4 +1,6 @@
 export type DetectedEncoding = 'empty' | 'utf8' | 'utf8-bom' | 'utf16le' | 'utf16le-bom' | 'utf16be' | 'utf16be-bom' | 'gb18030' | 'binary';
+/** 各基础编码的 BOM 字节（gb18030 无 BOM 形态）。注入目标 BOM 的唯一字节源（bridge.InjectPrefix 共用）。 */
+export declare const BOM_BYTES: Record<'utf8' | 'utf16le' | 'utf16be' | 'gb18030', Buffer | null>;
 /**
  * 单一判定源：整缓冲扫描与流式扫描累积出同构的 EncodingScan，
  * 检测决策只在 decideFromScan 一处，保证两条路径行为一致。

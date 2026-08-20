@@ -25,7 +25,7 @@
 | `glob` | 编码无关 | 只匹配路径，不读内容。 |
 | `read_image` | 编码无关 | 只收 PNG/JPEG/WebP/GIF，magic-byte 校验。 |
 | shell（`pwsh`/`bash` 等） | 已知边界 + 补位 | 独立进程直读磁盘，无法透明拦截。系统提示已注入指导；查看旧编码文件用 `eb_peek`（不动磁盘）或 `read`（透明转码）。 |
-| >50 MiB 文件 | 豁免 + 补位 | 自动桥不做检测转换；显式转换用 `eb_convert`（同样上限 50 MiB）。 |
+| >50 MiB 文件 | 豁免 + 补位 | 自动桥不做检测转换；显式转换用 `eb_convert`（流式检测与转换，无上限）。 |
 
 ## 恢复语义
 
@@ -41,14 +41,14 @@
 | `eb_status` | 查看账本：待恢复原编码的文件清单（原编码 / 所属会话 / 失败原因）。 |
 | `eb_restore` | 立即恢复（缺省全部；可指定单个 `file_path`）。 |
 | `eb_peek` | 内存解码读取任意编码文本文件（零磁盘副作用，不转码不进账本；支持 `offset`/`limit` 行窗口）。shell 场景查看旧编码文件首选。 |
-| `eb_grep` | 内存解码版 grep（JS RegExp 语法）：跨编码中文检索，弥补内置 `grep` 非 ASCII 漏配；支持目录 target 与 `include` glob 过滤，跳过二进制扩展名。 |
-| `eb_convert` | 显式转 UTF-8 no BOM。缺省遵循会话视图（进账本，轮末恢复原编码）；`persist: true` 持久转换（迁移语义，轮末不恢复）。 |
+| `eb_grep` | 内存解码版 grep（JS RegExp 语法）：跨编码中文检索，弥补内置 `grep` 非 ASCII 漏配；支持目录 target 与 `include` glob 过滤，跳过二进制扩展名（单文件 target 同样跳过）。 |
+| `eb_convert` | 显式转 UTF-8 no BOM（流式，无大小上限）。缺省遵循会话视图（进账本，轮末恢复原编码）；`persist: true` 持久转换（迁移语义，轮末不恢复）。 |
 
 ## 大小分层与流式转换
 
 - ≤ 5 MiB：整缓冲路径（一次性读入检测与转换）。
-- 5–50 MiB：流式路径——流式检测（与整缓冲共用 `decideFromScan` 单一判定源）+ iconv 流式管道转换（临时文件 `.ebtmp` → `rename` 原子替换；rename 被外部占用拒绝时回退原地覆盖；失败不落半截、原字节不动）。
-- \> 50 MiB：自动桥跳过；`eb_convert` 显式报错。
+- \> 5 MiB：流式路径——流式检测（与整缓冲共用 `decideFromScan` 单一判定源）+ iconv 流式管道转换（临时文件 `.ebtmp` → `rename` 原子替换；`rename` 被外部占用拒绝时回退原地覆盖——覆盖前内存备份原字节、写失败自动回写；失败不落半截、原字节不动）。
+- \> 50 MiB：自动桥跳过；`eb_convert` 显式补位（流式检测与转换全链路，无上限；轮末恢复同样走流式）。
 
 ## 已知边界
 
@@ -78,5 +78,5 @@ bundle 层加载会因缺失 patch 文件而 fail loud。安装后需重启对�
 ## 测试
 
 ```bash
-npm test                    # node --test "test/*.test.mjs"（51 项：检测等价/流式原子转换/磁盘桥/内存解码/persist 语义/e2e）
+npm test                    # node --test "test/*.test.mjs"（57 项：检测等价/流式原子转换/回退覆盖/磁盘桥/恢复竞态/内存解码/persist 语义/e2e）
 ```
