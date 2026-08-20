@@ -11,6 +11,7 @@ import {
   detectEncodingFile,
   recodeFile,
   overwriteInPlace,
+  isDefinitivelyGone,
   ensureUtf8OnDisk,
   restoreAll,
   peekFile,
@@ -245,6 +246,43 @@ test('磁盘桥：条目路径 stat 后不可读（指向目录）→ gone，不
   assert.equal(ledger.size, 0)
   assert.equal(await detectEncodingFile(other), 'gb18030')
   assert.ok(Buffer.compare(await fsp.readFile(other), otherOriginal) === 0)
+})
+
+// ── Slice C2：恢复错误分流（确定消失 vs 暂时不可读） ──────────────────────────
+test('isDefinitivelyGone：ENOENT/ENOTDIR/EISDIR → true；EBUSY/EACCES/EPERM/无 code → false', () => {
+  const err = (code) => Object.assign(new Error('x'), { code })
+  assert.equal(isDefinitivelyGone(err('ENOENT')), true)
+  assert.equal(isDefinitivelyGone(err('ENOTDIR')), true)
+  assert.equal(isDefinitivelyGone(err('EISDIR')), true)
+  assert.equal(isDefinitivelyGone(err('EBUSY')), false)
+  assert.equal(isDefinitivelyGone(err('EACCES')), false)
+  assert.equal(isDefinitivelyGone(err('EPERM')), false)
+  assert.equal(isDefinitivelyGone(new Error('no code')), false)
+  assert.equal(isDefinitivelyGone(undefined), false)
+})
+
+test('磁盘桥：恢复写失败（只读）→ failed 保留账本条目，解除后重试成功', async () => {
+  // 暂时不可写不等于确定消失：条目必须保留（restoreFailed 可查），下轮恢复重试
+  const file = fileOf('bridge-readonly-restore.txt')
+  const original = iconv.encode('只读恢复测试\r\n', 'gb18030')
+  await fsp.writeFile(file, original)
+  const ledger = new EncodingLedger()
+  await ensureUtf8OnDisk(file, ledger, 's1')
+  await fsp.chmod(file, 0o444) // Windows：只读属性 → 恢复写回失败
+  try {
+    const report = await restoreAll(ledger)
+    assert.ok(report[0].includes('failed'), `应判 failed：${JSON.stringify(report)}`)
+    assert.equal(ledger.size, 1, '账本保留待重试')
+    assert.ok(ledger.get(file.toLowerCase()).restoreFailed, 'restoreFailed 已标记')
+    assert.equal(await detectEncodingFile(file), 'utf8', '文件停留 UTF-8')
+  } finally {
+    await fsp.chmod(file, 0o666)
+  }
+  const report2 = await restoreAll(ledger)
+  assert.ok(report2[0].includes('restored'))
+  assert.equal(ledger.size, 0)
+  assert.equal(await detectEncodingFile(file), 'gb18030')
+  assert.ok(Buffer.compare(await fsp.readFile(file), original) === 0)
 })
 
 // ── Slice D：peekFile 内存解码（零磁盘副作用） ───────────────────────────────

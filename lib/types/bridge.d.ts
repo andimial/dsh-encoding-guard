@@ -31,7 +31,13 @@ export type EnsureOutcome = 'converted' | 'already' | 'skipped';
  */
 export declare function ensureUtf8OnDisk(absPath: string, ledger: EncodingLedger, sessionId: string): Promise<EnsureOutcome>;
 export type RestoreOutcome = 'restored' | 'gone' | 'external' | 'failed';
-/** 恢复单个账本文件为原编码（当前内容重新编码；字符序列不变）。 */
+/** 判定错误是否意味着「文件已确定不在该路径上」：
+ * 路径消失（ENOENT）、路径某环节非目录（ENOTDIR）、路径已是目录（EISDIR）。
+ * 其余（EBUSY/EACCES/EPERM 等暂时性不可读写）不算：恢复须保留账本条目，下轮重试。 */
+export declare function isDefinitivelyGone(error: unknown): boolean;
+/** 恢复单个账本文件为原编码（当前内容重新编码；字符序列不变）。
+ * 错误分流：确定消失（isDefinitivelyGone）→ gone 清账；暂时不可读写（被占用/权限等）
+ * → failed 保留条目并标记 restoreFailed，下轮恢复重试——文件停留 UTF-8，不丢原编码信息。 */
 export declare function restoreOne(ledger: EncodingLedger, key: string, entry: LedgerEntry): Promise<RestoreOutcome>;
 /** 恢复账本中的全部文件（轮末/会话结束/卸载兜底共用）。 */
 export declare function restoreAll(ledger: EncodingLedger): Promise<string[]>;
