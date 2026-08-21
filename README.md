@@ -62,8 +62,8 @@
 ## 构建与安装
 
 ```bash
-npm install                 # 安装 typescript / @types/node / iconv-lite
-npm run build               # bash scripts/build.sh；Windows 无 bash 时按其逻辑手动 junction + tsc
+npm install                 # 安装 typescript / @types/node / iconv-lite；postinstall 自动重建 peer junction + 编译
+npm run build               # bash scripts/build.sh（幂等）；Windows 无 bash 时按其逻辑手动 junction + tsc
 # DSH_CHECKOUT 可指向源码 checkout 或 npm 安装的 @deepseek-ai/dsh
 dsh plugin --profile web add <解压目录>   # 本地目录安装（pnpm 解析为 link:，改代码即时生效）
 dsh --profile web --dump-config                       # 验证：组合树出现 id: encoding-guard 行

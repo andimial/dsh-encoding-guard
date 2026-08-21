@@ -34,6 +34,7 @@
   },
   "scripts": {
     "build": "bash scripts/build.sh",
+    "postinstall": "node -e \"const fs=require('fs');if(!fs.existsSync('scripts/build.sh'))process.exit(0);const r=require('child_process').spawnSync('bash',['scripts/build.sh'],{stdio:'inherit'});if(r.error){console.error('postinstall: cannot run bash to link dsh peer junctions:',r.error.message);process.exit(1)}process.exit(r.status??0)\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test \"test/*.test.mjs\""
   }
