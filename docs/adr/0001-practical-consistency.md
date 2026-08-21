@@ -16,3 +16,7 @@ status: accepted
 - grep 对非 ASCII 模式在旧编码文件上漏配是已知边界，由 eb_grep 补位。
 - shell 读文件为文档化边界，由 eb_peek 与提示词指导补位。
 - >5MB（后续放宽至 50MB 流式）以上的自动转换豁免由 eb_convert 显式补位。
+
+## Amendments
+
+- **2026-08-21**：转换桥覆盖面扩展至 `str_replace_editor` 的文本命令（view 文件 / create / str_replace / insert）。该工具与内置文件工具同走文件系统 seam，同受版本观察策略约束，桥接语义同构；目录 view 属编码无关通道豁免。属既有机制覆盖面扩展而非新决策，故以本条增补留痕，不另立 ADR（决策过程见 GitHub Issues #3 spec）。

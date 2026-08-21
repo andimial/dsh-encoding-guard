@@ -11,17 +11,17 @@ DSH 文件工具的编码守卫：让模型在文本读写中把一切文本文�
 _Avoid_: 漏网、未覆盖（未定义判据的泛称）
 
 **编码无关通道（Encoding-agnostic channel）**:
-只接触文件路径或纯二进制内容的通道（如 glob、read_image）。无论文件编码为何，其行为与结果不变；它不是绕过路径。
+只接触文件路径或纯二进制内容的通道（如 glob、read_image、str_replace_editor 的目录 view）。无论文件编码为何，其行为与结果不变；它不是绕过路径。
 _Avoid_: 把这类通道列入"绕过清单"
 
 **实用一致（Practical consistency）**:
-本项目承诺的保证级别：read/write/edit 完全正确；其余模型可见通道保证 ASCII 模式对 GBK 系文件可命中（UTF-16 文件 grep 任何模式均漏配，由 eb_grep 与 read 自愈补位）、有使用指导、经 read 触达即可自愈；不承诺进程外通道（shell 等）透明。
+本项目承诺的保证级别：内置 read/write/edit 与 str_replace_editor 的文本命令（view 文件 / create / str_replace / insert）完全正确；其余模型可见通道保证 ASCII 模式对 GBK 系文件可命中（UTF-16 文件 grep 任何模式均漏配，由 eb_grep 与 read 自愈补位）、有使用指导、经 read 触达即可自愈；不承诺进程外通道（shell 等）透明。
 _Avoid_: 强一致（本项目明确不追求"所有通道字节级一致"）
 
 ### 桥接机制
 
 **转换桥（Transcode bridge）**:
-读写工具执行前把非 UTF-8 no BOM 文本文件原地转为 UTF-8 no BOM 的机制；字符序列与行尾在往返转换中保持不变。
+读写工具执行前把非 UTF-8 no BOM 文本文件原地转为 UTF-8 no BOM 的机制；字符序列与行尾在往返转换中保持不变。覆盖内置 read/write/edit 与 str_replace_editor 的文本命令。
 _Avoid_: 编码转换器（泛称，丢失"桥接官方工具"含义）
 
 **账本（Ledger）**:
