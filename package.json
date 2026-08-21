@@ -1,6 +1,6 @@
 {
   "name": "dsh-encoding-guard",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "文件编码守卫：read/write/edit 工具透明 UTF-8 no BOM 转码桥，轮次结束恢复原编码（utf8-bom/gb18030/utf16le/utf16be）",
   "private": true,
   "type": "module",
