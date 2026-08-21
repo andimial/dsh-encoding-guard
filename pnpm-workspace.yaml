@@ -1,0 +1,8 @@
+# pnpm compatibility settings for this repo (npm is the canonical workflow, see AGENTS.md).
+# 2026-08-21: npm registry serves a broken/empty corgi doc (application/vnd.npm.install-v1+json)
+# for some @deepseek-ai packages; pnpm's range resolution then picks @deepseek-ai/dsh-session
+# 0.0.1-rc.1, whose peerDependencies reference the never-published @deepseek-ai/dsh-type-meta
+# (404). Peers are provided by scripts/build.sh junctions, so pnpm must not auto-install them.
+autoInstallPeers: false
+# Keep pnpm from auto-installing over npm's node_modules layout before run scripts.
+verifyDepsBeforeRun: false
