@@ -26,11 +26,9 @@
 import type { Context } from 'cordis'
 import type {} from '@deepseek-ai/dsh-fs'
 import fsp from 'node:fs/promises'
-import path from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { EncodingLedger } from './ledger.js'
 import {
-  BINARY_EXTENSIONS,
   IN_MEMORY_LIMIT,
   ensureUtf8OnDisk,
   restoreAll,
@@ -39,12 +37,10 @@ import {
   grepFiles,
   convertFile,
 } from './bridge.js'
+import { routeGuardAction } from './router.js'
 
 export const name = 'dsh-encoding-guard'
 export const inject = ['fs', 'tools', 'systemPrompt']
-
-/** 拦截的目标工具（dsh-tool-fs 的模型面工具名）。 */
-const TARGET_TOOLS = new Set(['read', 'write', 'edit'])
 
 export function apply(ctx: Context): void {
   const ledger = new EncodingLedger()
@@ -86,31 +82,52 @@ export function apply(ctx: Context): void {
 
   // ── 核心拦截：tools/execute around-wrapper ────────────────────────────────────
   ctx.on('tools/execute', async (exec: any, next: () => Promise<any>) => {
-    if (!TARGET_TOOLS.has(exec?.name)) return next()
-    const filePath: unknown = exec.arguments?.file_path
-    if (typeof filePath !== 'string' || filePath === '') return next()
-    const absPath = await resolveToolPath(filePath, exec)
+    const rawArgs = (exec.arguments ?? {}) as Record<string, unknown>
+
+    // 第一轮纯路由：先做参数形态/工具名/二进制扩展名放行判定，避免无谓路径解析
+    const preliminary = routeGuardAction({ tool: exec.name, args: rawArgs })
+    if (preliminary.kind === 'pass') return next()
+
+    const absPath = await resolveToolPath(rawArgs.file_path as string, exec)
     if (!absPath) return next()
-    if (BINARY_EXTENSIONS.has(path.extname(absPath).toLowerCase())) return next()
+
+    // 解析后先按绝对路径做一次二进制/未知工具放行判定，避免对二进制 write 做无谓 stat
+    const resolvedAction = routeGuardAction({ tool: exec.name, args: rawArgs, filePath: absPath })
+    if (resolvedAction.kind === 'pass') return next()
+
+    // write 需要知道是否新建以决定归一；read/edit 不需要（edit 视为已存在）
+    let existed: boolean | undefined
+    if (exec.name === 'write') {
+      try {
+        await fsp.stat(absPath)
+        existed = true
+      } catch {
+        existed = false
+      }
+    }
+
+    // 最终纯路由：以解析后的绝对路径和 exists 精化动作（桥接读 / 桥接写 / 新建归一 / 放行）
+    const action = routeGuardAction({
+      tool: exec.name,
+      args: rawArgs,
+      filePath: absPath,
+      exists: existed,
+    })
+    if (action.kind === 'pass') return next()
+
     const key = absPath.toLowerCase()
     const sessionId = sessionIdOf(exec)
 
-    if (exec.name === 'read') {
+    if (action.kind === 'bridge-read') {
       await guardConvert(absPath, key, sessionId, exec.signal)
       return next()
     }
 
-    // write / edit
-    let existed = true
-    try {
-      await fsp.stat(absPath)
-    } catch {
-      existed = false
-    }
+    // bridge-write / new-file-normalize：写前同样转码（新建时 ensure 为 no-op）
     await guardConvert(absPath, key, sessionId, exec.signal)
     const result = await next()
     // 需求 4：write 新建的文件落地为 UTF-8 no BOM + LF 行尾（仅在内容含 CRLF 时归一）
-    if (exec.name === 'write' && !existed && result && result.isError !== true) {
+    if (action.kind === 'new-file-normalize' && result && result.isError !== true) {
       try {
         const bytes = await fsp.readFile(absPath)
         const text = bytes.toString('utf8')

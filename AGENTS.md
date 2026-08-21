@@ -13,7 +13,7 @@ DSH 插件：内置 read/write/edit 的转换桥 + `eb_*` 补位工具族。
 改 `src/` 后依次过闸，每步判据达成才进下一步：
 
 1. `npm run build`：编译 src → lib，重建 peer 依赖 junction。判据：tsc 零错误退出。
-2. `npm test`：测试 import 的是 `lib/` 编译产物，先 build 后 test——跳过 build 测的是旧代码。判据：三套 `test/*.test.mjs` 全部通过。新测试按层落位：编码检测 → `encoding`，磁盘桥/流式转换 → `bridge`，端到端往返 → `e2e`。
+2. `npm test`：测试 import 的是 `lib/` 编译产物，先 build 后 test——跳过 build 测的是旧代码。判据：`test/*.test.mjs` 全部通过。新测试按层落位：编码检测 → `encoding`，磁盘桥/流式转换 → `bridge`，调度路由 → `router`，端到端往返 → `e2e`。
 3. 挂点改动（`src/index.ts`：tools/execute 拦截、事件恢复、工具注册）额外在线验证——自动化测试覆盖不到它。已注入环境用 `dev_reload_package {"packageName":"dsh-encoding-guard"}` 热重载，用 GBK/BOM 样本文件走 read → edit，等轮次结束。判据：磁盘回原编码、`eb_status` 账本为空、host 日志出现"轮次结束恢复"。
 4. 行为或边界有变：同步 README.md 的行为清单与边界表。判据：README 每条与实际行为一致。
 

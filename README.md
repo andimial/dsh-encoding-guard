@@ -78,5 +78,5 @@ bundle 层加载会因缺失 patch 文件而 fail loud。安装后需重启对�
 ## 测试
 
 ```bash
-npm test                    # node --test "test/*.test.mjs"（59 项：检测等价/流式原子转换/回退覆盖/磁盘桥/恢复竞态与错误分流/内存解码/persist 语义/e2e）
+npm test                    # node --test "test/*.test.mjs"（76 项：检测等价/流式原子转换/回退覆盖/磁盘桥/恢复竞态与错误分流/内存解码/persist 语义/路由判定/e2e）
 ```
