@@ -4,6 +4,8 @@ import { EncodingLedger, type LedgerEntry } from './ledger.js';
 export declare const IN_MEMORY_LIMIT: number;
 /** 自动桥硬上限：超过此值自动桥不做检测转换（防误伤大文件）；eb_convert 显式补位，无上限。 */
 export declare const MAX_SCAN_BYTES: number;
+/** CRLF → LF 归一（仅内容含 CRLF 时替换，保持其余字符不变）。 */
+export declare function normalizeCrlfToLf(text: string): string;
 /** 流式扫描文件。读取失败时 reject（调用方决定放行或报错）。 */
 export declare function scanFile(absPath: string): Promise<EncodingScan>;
 /** 流式检测文件编码；不存在/不可读返回 undefined（交由官方工具给出规范错误）。 */

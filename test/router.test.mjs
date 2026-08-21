@@ -67,6 +67,57 @@ test('edit：二进制扩展名 → pass', () => {
   assert.deepEqual(routeGuardAction({ tool: 'edit', args: { file_path: 'a.exe' } }), { kind: 'pass' })
 })
 
+// ── str_replace_editor：命令语义映射 ─────────────────────────────────────────
+test('str_replace_editor：view 文件 → bridge-read', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'view', path: 'a.txt' } }), { kind: 'bridge-read' })
+})
+
+test('str_replace_editor：view 目录 → pass（编码无关）', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'view', path: 'a-dir' }, isDirectory: true }), { kind: 'pass' })
+})
+
+test('str_replace_editor：view 解析后为目录 → pass', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'view', path: 'a.txt' }, filePath: 'a-dir', isDirectory: true }), { kind: 'pass' })
+})
+
+test('str_replace_editor：create 不存在 → new-file-normalize', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'create', path: 'a.txt', file_text: 'x' }, exists: false }), { kind: 'new-file-normalize' })
+})
+
+test('str_replace_editor：create 已存在 → pass（官方工具报错）', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'create', path: 'a.txt', file_text: 'x' }, exists: true }), { kind: 'pass' })
+})
+
+test('str_replace_editor：create exists 缺省 → new-file-normalize', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'create', path: 'a.txt', file_text: 'x' } }), { kind: 'new-file-normalize' })
+})
+
+test('str_replace_editor：str_replace → bridge-write', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'str_replace', path: 'a.txt', old_str: 'x', new_str: 'y' } }), { kind: 'bridge-write' })
+})
+
+test('str_replace_editor：insert → bridge-write', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'insert', path: 'a.txt', insert_line: 1, new_str: 'x' } }), { kind: 'bridge-write' })
+})
+
+test('str_replace_editor：未知命令 → pass', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'delete', path: 'a.txt' } }), { kind: 'pass' })
+})
+
+test('str_replace_editor：缺 path → pass', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'view' } }), { kind: 'pass' })
+})
+
+test('str_replace_editor：path 非字符串 → pass', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'view', path: 42 } }), { kind: 'pass' })
+})
+
+test('str_replace_editor：二进制扩展名 → pass（各命令）', () => {
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'view', path: 'a.png' } }), { kind: 'pass' })
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'create', path: 'a.zip' }, exists: false }), { kind: 'pass' })
+  assert.deepEqual(routeGuardAction({ tool: 'str_replace_editor', args: { command: 'str_replace', path: 'a.exe' } }), { kind: 'pass' })
+})
+
 // ── 未知工具：一律放行 ───────────────────────────────────────────────────────
 test('未知工具：有 file_path 也 → pass', () => {
   assert.deepEqual(routeGuardAction({ tool: 'grep', args: { file_path: 'a.txt' } }), { kind: 'pass' })

@@ -1,11 +1,11 @@
 /**
  * dsh-encoding-guard — 文件编码守卫。
  *
- * 对内置 read/write/edit 工具做透明编码桥接：
- *  1. 读取前：磁盘文件非 UTF-8 no BOM（utf8-bom / gb18030 / utf16le / utf16be）时，
- *     先原地把字符内容转码为 UTF-8 no BOM（字符序列与行尾不变），官方 read 因此总能读到文本；
- *  2. 编写前：同样先转 UTF-8 no BOM，官方 write/edit 正常工作；
- *     write 新建文件落地为 UTF-8 no BOM 且行尾 LF；
+ * 对内置 read/write/edit 与 str_replace_editor 文本命令做透明编码桥接：
+ *  1. 读取前（read / str_replace_editor view 文件）：磁盘文件非 UTF-8 no BOM（utf8-bom / gb18030 / utf16le / utf16be）时，
+ *     先原地把字符内容转码为 UTF-8 no BOM（字符序列与行尾不变），官方工具因此总能读到文本；
+ *  2. 编写前（write / edit / str_replace_editor str_replace / insert）：同样先转 UTF-8 no BOM，官方工具正常工作；
+ *     write / str_replace_editor create 新建文件落地为 UTF-8 no BOM 且行尾 LF；
  *  3. 轮次结束（agent/turn-stopping）：把账本中的文件恢复为原编码；
  *     会话结束（session/disposed）与插件卸载兜底检查，未恢复的一律恢复。
  *

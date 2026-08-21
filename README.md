@@ -1,6 +1,6 @@
 # dsh-encoding-guard
 
-文件编码守卫——DSH 内置 `read` / `write` / `edit` 工具的透明 UTF-8 no BOM 转码桥，附绕过补位工具族（`eb_peek` / `eb_grep` / `eb_convert`）。
+文件编码守卫——DSH 内置 `read` / `write` / `edit` 与 `str_replace_editor` 文本命令的透明 UTF-8 no BOM 转码桥，附绕过补位工具族（`eb_peek` / `eb_grep` / `eb_convert`）。
 
 ## 解决什么问题
 
@@ -8,11 +8,12 @@
 
 ## 行为
 
-1. **读取前**（`read` 工具触发）：检测磁盘文件编码；非 UTF-8 no BOM（`utf8-bom` / `gb18030`(含 GBK) / `utf16le` / `utf16be`，带或不带 BOM）时先把文件原地转为 UTF-8 no BOM（**字符序列与行尾完全不变**），官方 `read` 因此总能读到正确文本。
-2. **编写前**（`write` / `edit` 工具触发）：同样先转 UTF-8 no BOM，官方工具正常读写；**编写后不立即恢复**——会话期间文件保持 UTF-8 no BOM，保证 read-before-write 版本守卫（`FsVersion` 含 size/mtimeNs）全程一致，连续编辑不会被 `FS_STALE_VERSION` 打断。
+1. **读取前**（`read` 或 `str_replace_editor` 的 `view` 文件触发）：检测磁盘文件编码；非 UTF-8 no BOM（`utf8-bom` / `gb18030`(含 GBK) / `utf16le` / `utf16be`，带或不带 BOM）时先把文件原地转为 UTF-8 no BOM（**字符序列与行尾完全不变**），官方工具因此总能读到正确文本。
+2. **编写前**（`write` / `edit` 或 `str_replace_editor` 的 `str_replace` / `insert` 触发）：同样先转 UTF-8 no BOM，官方工具正常读写；**编写后不立即恢复**——会话期间文件保持 UTF-8 no BOM，保证 read-before-write 版本守卫（`FsVersion` 含 size/mtimeNs）全程一致，连续编辑不会被 `FS_STALE_VERSION` 打断。
 3. **轮次结束恢复**（`agent/turn-stopping`）：把账本中的文件恢复为原编码（当前内容重新编码，字符序列不变）。下一轮若继续编辑同一文件，插件会再次转为 UTF-8 no BOM；首个 `edit` 可能因版本过期被拒，re-read 一次即自愈。
 4. **会话结束兜底**（`session/disposed`）与**插件卸载兜底**（fiber dispose）：漏恢复的一律恢复。
-5. **新建文件**（`write` 落地不存在的路径）：UTF-8 no BOM 且行尾 LF（内容含 CRLF 时自动归一）。
+5. **新建文件**（`write` 或 `str_replace_editor` 的 `create` 落地不存在的路径）：UTF-8 no BOM 且行尾 LF（内容含 CRLF 时自动归一）。
+6. **目录 view**（`str_replace_editor` 的 `view` 作用于目录）：编码无关通道，直接放行，不转码、不进账本。
 
 ## 保障边界（ADR 0001：实用一致）
 
@@ -21,6 +22,8 @@
 | 通道 | 状态 | 说明 |
 |---|---|---|
 | `read` / `write` / `edit` | 受保护 | 磁盘桥透明转码。 |
+| `str_replace_editor`（view 文件 / create / str_replace / insert） | 受保护 | 磁盘桥透明转码；`create` 新建与 `write` 新建同语义（LF 归一）。 |
+| `str_replace_editor`（view 目录） | 编码无关 | 只列目录，不读文件内容；不转码、不进账本。 |
 | `grep` | 已知边界 + 补位 | ripgrep 直读磁盘字节：ASCII 模式对 GBK/GB18030 文件仍可命中；**非 ASCII 模式（中文关键词）会漏配**；**UTF-16 文件任何模式都会漏配**（NUL 字节交错）。系统提示已注入警告；跨编码检索用 `eb_grep`。 |
 | `glob` | 编码无关 | 只匹配路径，不读内容。 |
 | `read_image` | 编码无关 | 只收 PNG/JPEG/WebP/GIF，magic-byte 校验。 |
@@ -78,5 +81,5 @@ bundle 层加载会因缺失 patch 文件而 fail loud。安装后需重启对�
 ## 测试
 
 ```bash
-npm test                    # node --test "test/*.test.mjs"（76 项：检测等价/流式原子转换/回退覆盖/磁盘桥/恢复竞态与错误分流/内存解码/persist 语义/路由判定/e2e）
+npm test                    # node --test "test/*.test.mjs"（92 项：检测等价/流式原子转换/回退覆盖/磁盘桥/恢复竞态与错误分流/内存解码/persist 语义/路由判定/str_replace_editor 命令映射/e2e）
 ```

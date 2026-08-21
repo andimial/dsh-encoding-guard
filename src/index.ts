@@ -1,11 +1,11 @@
 /**
  * dsh-encoding-guard — 文件编码守卫。
  *
- * 对内置 read/write/edit 工具做透明编码桥接：
- *  1. 读取前：磁盘文件非 UTF-8 no BOM（utf8-bom / gb18030 / utf16le / utf16be）时，
- *     先原地把字符内容转码为 UTF-8 no BOM（字符序列与行尾不变），官方 read 因此总能读到文本；
- *  2. 编写前：同样先转 UTF-8 no BOM，官方 write/edit 正常工作；
- *     write 新建文件落地为 UTF-8 no BOM 且行尾 LF；
+ * 对内置 read/write/edit 与 str_replace_editor 文本命令做透明编码桥接：
+ *  1. 读取前（read / str_replace_editor view 文件）：磁盘文件非 UTF-8 no BOM（utf8-bom / gb18030 / utf16le / utf16be）时，
+ *     先原地把字符内容转码为 UTF-8 no BOM（字符序列与行尾不变），官方工具因此总能读到文本；
+ *  2. 编写前（write / edit / str_replace_editor str_replace / insert）：同样先转 UTF-8 no BOM，官方工具正常工作；
+ *     write / str_replace_editor create 新建文件落地为 UTF-8 no BOM 且行尾 LF；
  *  3. 轮次结束（agent/turn-stopping）：把账本中的文件恢复为原编码；
  *     会话结束（session/disposed）与插件卸载兜底检查，未恢复的一律恢复。
  *
@@ -26,18 +26,20 @@
 import type { Context } from 'cordis'
 import type {} from '@deepseek-ai/dsh-fs'
 import fsp from 'node:fs/promises'
+import path from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { EncodingLedger } from './ledger.js'
 import {
   IN_MEMORY_LIMIT,
   ensureUtf8OnDisk,
+  normalizeCrlfToLf,
   restoreAll,
   restoreOne,
   peekFile,
   grepFiles,
   convertFile,
 } from './bridge.js'
-import { routeGuardAction } from './router.js'
+import { routeGuardAction, toolPathArg } from './router.js'
 
 export const name = 'dsh-encoding-guard'
 export const inject = ['fs', 'tools', 'systemPrompt']
@@ -59,7 +61,7 @@ export function apply(ctx: Context): void {
     return (exec as { agent?: { session?: { id?: string } } } | undefined)?.agent?.session?.id ?? 'unknown'
   }
 
-  /** 解析工具参数里的 file_path 为绝对路径（复用 ctx.fs 的会话 cwd 语义）。 */
+  /** 解析工具参数里的 file_path / path 为绝对路径（复用 ctx.fs 的会话 cwd 语义）。 */
   async function resolveToolPath(filePath: string, exec: unknown): Promise<string | undefined> {
     const e = exec as { signal?: AbortSignal }
     const cwd = sessionCwdOf(exec)
@@ -88,30 +90,38 @@ export function apply(ctx: Context): void {
     const preliminary = routeGuardAction({ tool: exec.name, args: rawArgs })
     if (preliminary.kind === 'pass') return next()
 
-    const absPath = await resolveToolPath(rawArgs.file_path as string, exec)
+    // 路径参数按工具形态分派：内置工具取 file_path；str_replace_editor 取 path
+    const pathArg = toolPathArg(exec.name, rawArgs)
+    // str_replace_editor 官方工具强制绝对路径；相对路径直接放行给官方报错，避免先转码造成磁盘副作用
+    if (exec.name === 'str_replace_editor' && typeof pathArg === 'string' && !path.isAbsolute(pathArg)) return next()
+    const absPath = await resolveToolPath(pathArg as string, exec)
     if (!absPath) return next()
 
     // 解析后先按绝对路径做一次二进制/未知工具放行判定，避免对二进制 write 做无谓 stat
     const resolvedAction = routeGuardAction({ tool: exec.name, args: rawArgs, filePath: absPath })
     if (resolvedAction.kind === 'pass') return next()
 
-    // write 需要知道是否新建以决定归一；read/edit 不需要（edit 视为已存在）
+    // write / str_replace_editor 需要知道是否新建或目录 view 以决定归一 / 豁免；
+    // read/edit 不需要（edit 视为已存在）
     let existed: boolean | undefined
-    if (exec.name === 'write') {
+    let isDirectory: boolean | undefined
+    if (exec.name === 'write' || exec.name === 'str_replace_editor') {
       try {
-        await fsp.stat(absPath)
+        const st = await fsp.stat(absPath)
         existed = true
+        isDirectory = st.isDirectory()
       } catch {
         existed = false
       }
     }
 
-    // 最终纯路由：以解析后的绝对路径和 exists 精化动作（桥接读 / 桥接写 / 新建归一 / 放行）
+    // 最终纯路由：以解析后的绝对路径、exists、isDirectory 精化动作（桥接读 / 桥接写 / 新建归一 / 放行）
     const action = routeGuardAction({
       tool: exec.name,
       args: rawArgs,
       filePath: absPath,
       exists: existed,
+      isDirectory,
     })
     if (action.kind === 'pass') return next()
 
@@ -126,13 +136,13 @@ export function apply(ctx: Context): void {
     // bridge-write / new-file-normalize：写前同样转码（新建时 ensure 为 no-op）
     await guardConvert(absPath, key, sessionId, exec.signal)
     const result = await next()
-    // 需求 4：write 新建的文件落地为 UTF-8 no BOM + LF 行尾（仅在内容含 CRLF 时归一）
+    // 新建语义（write / str_replace_editor create）：落地为 UTF-8 no BOM + LF 行尾（仅在内容含 CRLF 时归一）
     if (action.kind === 'new-file-normalize' && result && result.isError !== true) {
       try {
         const bytes = await fsp.readFile(absPath)
         const text = bytes.toString('utf8')
         if (bytes.length <= IN_MEMORY_LIMIT && text.includes('\r\n')) {
-          await fsp.writeFile(absPath, Buffer.from(text.replaceAll('\r\n', '\n'), 'utf8'))
+          await fsp.writeFile(absPath, Buffer.from(normalizeCrlfToLf(text), 'utf8'))
         }
       } catch {
         /* 归一失败不影响写结果 */

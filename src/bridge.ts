@@ -37,6 +37,11 @@ export const MAX_SCAN_BYTES = 50 * 1024 * 1024
 
 const CHUNK_SIZE = 1 << 16
 
+/** CRLF → LF 归一（仅内容含 CRLF 时替换，保持其余字符不变）。 */
+export function normalizeCrlfToLf(text: string): string {
+  return text.includes('\r\n') ? text.replaceAll('\r\n', '\n') : text
+}
+
 // ── 流式扫描：累积 EncodingScan，判定交给 decideFromScan ─────────────────────
 
 class StreamScanner {
